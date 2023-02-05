@@ -11,24 +11,23 @@ struct ValueData {
 }
 
 #[derive(Clone)]
-enum BackwardImpl {
-    Addition(Rc<RefCell<ValueData>>, Rc<RefCell<ValueData>>),
+enum Operation {
+    Addition(Rc<Value>, Rc<Value>),
 }
 
-impl BackwardImpl {
-    fn propagate(&self, grad: f64) {
+impl Operation {
+    fn calculate_gradients(&self, grad: f64) {
         match self {
-            BackwardImpl::Addition(self_data, other_data) => {
+            Operation::Addition(lhs, rhs) => {
                 // These could both be pointing to the same value (e.g. a + a)
                 // So make sure to drop the reference to self_data before updating other_grad
                 {
-                    let self_grad = &mut RefCell::borrow_mut(self_data).grad;
-                    *self_grad += grad;
-                    drop(self_data);
+                    let lhs_grad = &mut RefCell::borrow_mut(&lhs.data).grad;
+                    *lhs_grad += grad;
                 }
 
-                let other_grad = &mut RefCell::borrow_mut(other_data).grad;
-                *other_grad += grad;
+                let rhs_grad = &mut RefCell::borrow_mut(&rhs.data).grad;
+                *rhs_grad += grad;
             }
         }
     }
@@ -37,20 +36,18 @@ impl BackwardImpl {
 #[derive(Clone)]
 pub struct Value {
     data: Rc<RefCell<ValueData>>,
-    operands: Vec<Rc<Value>>,
-    backward_fn: Option<BackwardImpl>,
+    operation: Option<Operation>,
 }
 
 impl Value {
-    fn from_val(val: f64) -> Self {
-        Self::new(val, vec![], None)
+    pub fn from_val(val: f64) -> Self {
+        Self::new(val, None)
     }
 
-    fn new(data: f64, operands: Vec<Rc<Value>>, backward_fn: Option<BackwardImpl>) -> Self {
+    fn new(data: f64, operation: Option<Operation>) -> Self {
         Self {
             data: Rc::new(RefCell::new(ValueData { data, grad: 0.0 })),
-            operands,
-            backward_fn,
+            operation,
         }
     }
 
@@ -71,8 +68,8 @@ impl Value {
         self.set_grad(1.0);
         let order = toposort(self);
         for node in order {
-            if let Some(backward_fn) = &node.backward_fn {
-                backward_fn.propagate(node.data.borrow().grad);
+            if let Some(operation) = &node.operation {
+                operation.calculate_gradients(node.grad());
             }
         }
     }
@@ -95,12 +92,18 @@ fn toposort_impl<'a>(
         return;
     }
     visited.insert(value);
-    for operand in &value.operands {
-        toposort_impl(operand.as_ref(), visited, traversal);
+
+    match &value.operation {
+        Some(Operation::Addition(lhs, rhs)) => {
+            toposort_impl(lhs.as_ref(), visited, traversal);
+            toposort_impl(rhs.as_ref(), visited, traversal);
+        }
+        None => {}
     }
 
     traversal.push(value);
 }
+
 
 impl PartialEq for Value {
     fn eq(&self, other: &Value) -> bool {
@@ -116,35 +119,32 @@ impl Hash for Value {
     }
 }
 
-impl std::ops::Neg for Value {
-    type Output = Value;
+// impl std::ops::Neg for Value {
+//     type Output = Value;
 
-    fn neg(self) -> Value {
-        Value::new(-self.data(), vec![Rc::new(self)], None)
-    }
-}
+//     fn neg(self) -> Value {
+//         Value::new(-self.data(), vec![Rc::new(self)], None)
+//     }
+// }
 
 impl std::ops::Add for Value {
     type Output = Value;
 
     fn add(self, other: Value) -> Value {
-        let self_value_data = self.data.clone();
-        let other_value_data = other.data.clone();
         Value::new(
             self.data() + other.data(),
-            vec![Rc::new(self), Rc::new(other)],
-            Some(BackwardImpl::Addition(self_value_data, other_value_data)),
+            Some(Operation::Addition(Rc::new(self), Rc::new(other)))
         )
     }
 }
 
-impl std::ops::Sub for Value {
-    type Output = Value;
+// impl std::ops::Sub for Value {
+//     type Output = Value;
 
-    fn sub(self, other: Value) -> Value {
-        self + (-other)
-    }
-}
+//     fn sub(self, other: Value) -> Value {
+//         self + (-other)
+//     }
+// }
 
 #[cfg(test)]
 mod test {
