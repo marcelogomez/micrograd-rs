@@ -59,42 +59,41 @@ impl Value {
 
     pub fn backward(&self) {
         self.set_grad(1.0);
-        let order = toposort(self);
-        for node in order {
-            if let Some(operation) = &node.operation {
-                operation.calculate_gradients(node.grad());
+        for value in self.toposort() {
+            if let Some(operation) = &value.operation {
+                operation.calculate_gradients(value.grad());
             }
         }
     }
-}
 
-fn toposort(value: &Value) -> Vec<&Value> {
-    let mut ordering = vec![];
-    let mut visited = HashSet::new();
-    toposort_impl(value, &mut visited, &mut ordering);
-    ordering.reverse();
-    ordering
-}
-
-fn toposort_impl<'a>(
-    value: &'a Value,
-    visited: &mut HashSet<&'a Value>,
-    traversal: &mut Vec<&'a Value>,
-) {
-    if visited.contains(&value) {
-        return;
+    fn toposort(&self) -> Vec<&Value> {
+        let mut ordering = vec![];
+        let mut visited = HashSet::new();
+        self.toposort_impl(&mut visited, &mut ordering);
+        ordering.reverse();
+        ordering
     }
-    visited.insert(value);
 
-    match &value.operation {
-        Some(Operation::Addition(lhs, rhs)) => {
-            toposort_impl(lhs.as_ref(), visited, traversal);
-            toposort_impl(rhs.as_ref(), visited, traversal);
+    fn toposort_impl<'a>(
+        &'a self,
+        visited: &mut HashSet<&'a Value>,
+        traversal: &mut Vec<&'a Value>,
+    ) {
+        if visited.contains(&self) {
+            return;
         }
-        None => {}
-    }
+        visited.insert(self);
 
-    traversal.push(value);
+        match &self.operation {
+            Some(Operation::Addition(lhs, rhs)) => {
+                lhs.toposort_impl(visited, traversal);
+                rhs.toposort_impl(visited, traversal);
+            }
+            None => {}
+        }
+
+        traversal.push(self);
+    }
 }
 
 
