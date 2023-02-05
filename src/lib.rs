@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::cmp::PartialEq;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+use std::ops::{Sub, Mul};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug)]
@@ -14,6 +15,7 @@ struct ValueData {
 enum Operation {
     Addition(Rc<Value>, Rc<Value>),
     Subtraction(Rc<Value>, Rc<Value>),
+    Multiplication(Rc<Value>, Rc<Value>),
 }
 
 impl Operation {
@@ -26,6 +28,10 @@ impl Operation {
             Operation::Subtraction(lhs, rhs) =>  {
                 lhs.set_grad(lhs.grad() + grad);
                 rhs.set_grad(rhs.grad() - grad);
+            }
+            Operation::Multiplication(lhs, rhs) =>  {
+                lhs.set_grad(grad * rhs.data());
+                rhs.set_grad(grad * lhs.data());
             }
         }
     }
@@ -98,6 +104,10 @@ impl Value {
                 lhs.toposort_impl(visited, traversal);
                 rhs.toposort_impl(visited, traversal);
             }
+            Some(Operation::Multiplication(lhs, rhs)) => {
+                lhs.toposort_impl(visited, traversal);
+                rhs.toposort_impl(visited, traversal);
+            }
             None => {}
         }
 
@@ -131,13 +141,24 @@ impl std::ops::Add for Value {
     }
 }
 
-impl std::ops::Sub for Value {
+impl Sub for Value {
     type Output = Value;
 
     fn sub(self, other: Value) -> Value {
         Value::new(
             self.data() - other.data(),
             Some(Operation::Subtraction(Rc::new(self), Rc::new(other)))
+        )
+    }
+}
+
+impl Mul for Value {
+    type Output = Value;
+
+    fn mul(self, other: Value) -> Value {
+        Value::new(
+            self.data() * other.data(),
+            Some(Operation::Multiplication(Rc::new(self), Rc::new(other)))
         )
     }
 }
@@ -164,7 +185,7 @@ mod test {
         c.backward();
 
         assert_eq!(c.data(), 3.0);
-        assert_eq!(c.grad(), 1.0);
+        assert_eq!(a.grad(), 1.0);
         assert_eq!(b.grad(), 1.0);
         assert_eq!(c.grad(), 1.0);
     }
@@ -177,8 +198,21 @@ mod test {
         c.backward();
 
         assert_eq!(c.data(), -1.0);
-        assert_eq!(c.grad(), 1.0);
+        assert_eq!(a.grad(), 1.0);
         assert_eq!(b.grad(), -1.0);
+        assert_eq!(c.grad(), 1.0);
+    }
+
+    #[test]
+    fn test_mul() {
+        let a = Value::from_val(11.0);
+        let b = Value::from_val(12.0);
+        let c = a.clone() * b.clone();
+        c.backward();
+
+        assert_eq!(c.data(), 132.0);
+        assert_eq!(a.grad(), 12.0);
+        assert_eq!(b.grad(), 11.0);
         assert_eq!(c.grad(), 1.0);
     }
 }
