@@ -13,9 +13,9 @@ struct ValueData {
 
 #[derive(Clone)]
 enum Operation {
-    Addition(Rc<Value>, Rc<Value>),
-    Subtraction(Rc<Value>, Rc<Value>),
-    Multiplication(Rc<Value>, Rc<Value>),
+    Addition(Value, Value),
+    Subtraction(Value, Value),
+    Multiplication(Value, Value),
 }
 
 impl Operation {
@@ -40,7 +40,7 @@ impl Operation {
 #[derive(Clone)]
 pub struct Value {
     data: Rc<RefCell<ValueData>>,
-    operation: Option<Operation>,
+    operation: Option<Rc<Operation>>,
 }
 
 impl Value {
@@ -48,7 +48,7 @@ impl Value {
         Self::new(val, None)
     }
 
-    fn new(data: f64, operation: Option<Operation>) -> Self {
+    fn new(data: f64, operation: Option<Rc<Operation>>) -> Self {
         Self {
             data: Rc::new(RefCell::new(ValueData { data, grad: 0.0 })),
             operation,
@@ -95,7 +95,7 @@ impl Value {
         }
         visited.insert(self);
 
-        match &self.operation {
+        match self.operation.as_ref().map(|op| op.as_ref()) {
             Some(Operation::Addition(lhs, rhs)) => {
                 lhs.toposort_impl(visited, traversal);
                 rhs.toposort_impl(visited, traversal);
@@ -136,7 +136,7 @@ impl std::ops::Add for Value {
     fn add(self, other: Value) -> Value {
         Value::new(
             self.data() + other.data(),
-            Some(Operation::Addition(Rc::new(self), Rc::new(other)))
+            Some(Rc::new(Operation::Addition(self, other)))
         )
     }
 }
@@ -147,7 +147,7 @@ impl Sub for Value {
     fn sub(self, other: Value) -> Value {
         Value::new(
             self.data() - other.data(),
-            Some(Operation::Subtraction(Rc::new(self), Rc::new(other)))
+            Some(Rc::new(Operation::Subtraction(self, other)))
         )
     }
 }
@@ -158,7 +158,7 @@ impl Mul for Value {
     fn mul(self, other: Value) -> Value {
         Value::new(
             self.data() * other.data(),
-            Some(Operation::Multiplication(Rc::new(self), Rc::new(other)))
+            Some(Rc::new(Operation::Multiplication(self, other)))
         )
     }
 }
