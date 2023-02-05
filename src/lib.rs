@@ -19,15 +19,8 @@ impl Operation {
     fn calculate_gradients(&self, grad: f64) {
         match self {
             Operation::Addition(lhs, rhs) => {
-                // These could both be pointing to the same value (e.g. a + a)
-                // So make sure to drop the reference to self_data before updating other_grad
-                {
-                    let lhs_grad = &mut RefCell::borrow_mut(&lhs.data).grad;
-                    *lhs_grad += grad;
-                }
-
-                let rhs_grad = &mut RefCell::borrow_mut(&rhs.data).grad;
-                *rhs_grad += grad;
+                lhs.set_grad(lhs.grad() + grad);
+                rhs.set_grad(rhs.grad() + grad);
             }
         }
     }
