@@ -13,6 +13,7 @@ struct ValueData {
 #[derive(Clone)]
 enum Operation {
     Addition(Rc<Value>, Rc<Value>),
+    Subtraction(Rc<Value>, Rc<Value>),
 }
 
 impl Operation {
@@ -21,6 +22,10 @@ impl Operation {
             Operation::Addition(lhs, rhs) => {
                 lhs.set_grad(lhs.grad() + grad);
                 rhs.set_grad(rhs.grad() + grad);
+            }
+            Operation::Subtraction(lhs, rhs) =>  {
+                lhs.set_grad(lhs.grad() + grad);
+                rhs.set_grad(rhs.grad() - grad);
             }
         }
     }
@@ -89,6 +94,10 @@ impl Value {
                 lhs.toposort_impl(visited, traversal);
                 rhs.toposort_impl(visited, traversal);
             }
+            Some(Operation::Subtraction(lhs, rhs)) => {
+                lhs.toposort_impl(visited, traversal);
+                rhs.toposort_impl(visited, traversal);
+            }
             None => {}
         }
 
@@ -111,14 +120,6 @@ impl Hash for Value {
     }
 }
 
-// impl std::ops::Neg for Value {
-//     type Output = Value;
-
-//     fn neg(self) -> Value {
-//         Value::new(-self.data(), vec![Rc::new(self)], None)
-//     }
-// }
-
 impl std::ops::Add for Value {
     type Output = Value;
 
@@ -130,13 +131,16 @@ impl std::ops::Add for Value {
     }
 }
 
-// impl std::ops::Sub for Value {
-//     type Output = Value;
+impl std::ops::Sub for Value {
+    type Output = Value;
 
-//     fn sub(self, other: Value) -> Value {
-//         self + (-other)
-//     }
-// }
+    fn sub(self, other: Value) -> Value {
+        Value::new(
+            self.data() - other.data(),
+            Some(Operation::Subtraction(Rc::new(self), Rc::new(other)))
+        )
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -162,6 +166,19 @@ mod test {
         assert_eq!(c.data(), 3.0);
         assert_eq!(c.grad(), 1.0);
         assert_eq!(b.grad(), 1.0);
+        assert_eq!(c.grad(), 1.0);
+    }
+
+    #[test]
+    fn test_sub() {
+        let a = Value::from_val(1.0);
+        let b = Value::from_val(2.0);
+        let c = a.clone() - b.clone();
+        c.backward();
+
+        assert_eq!(c.data(), -1.0);
+        assert_eq!(c.grad(), 1.0);
+        assert_eq!(b.grad(), -1.0);
         assert_eq!(c.grad(), 1.0);
     }
 }
