@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::cmp::PartialEq;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::ops::{Sub, Mul};
+use std::ops::{Mul, Sub};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug)]
@@ -11,11 +11,12 @@ struct ValueData {
     grad: f64,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 enum Operation {
     Addition(Value, Value),
     Subtraction(Value, Value),
     Multiplication(Value, Value),
+    Exponentiation(Value, u32),
 }
 
 impl Operation {
@@ -25,19 +26,26 @@ impl Operation {
                 lhs.set_grad(lhs.grad() + grad);
                 rhs.set_grad(rhs.grad() + grad);
             }
-            Operation::Subtraction(lhs, rhs) =>  {
+            Operation::Subtraction(lhs, rhs) => {
                 lhs.set_grad(lhs.grad() + grad);
                 rhs.set_grad(rhs.grad() - grad);
             }
-            Operation::Multiplication(lhs, rhs) =>  {
+            Operation::Multiplication(lhs, rhs) => {
                 lhs.set_grad(grad * rhs.data());
                 rhs.set_grad(grad * lhs.data());
+            }
+            Operation::Exponentiation(base, pow) => {
+                if *pow > 0 {
+                    base.set_grad(grad * (*pow as f64) * base.data().powi(*pow as i32 - 1));
+                } else {
+                    base.set_grad(0.0);
+                }
             }
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Value {
     data: Rc<RefCell<ValueData>>,
     operation: Option<Rc<Operation>>,
@@ -61,6 +69,13 @@ impl Value {
 
     pub fn grad(&self) -> f64 {
         self.data.borrow().grad
+    }
+
+    pub fn powi(self, exp: u32) -> Value {
+        Value::new(
+            self.data().powi(exp as i32),
+            Some(Rc::new(Operation::Exponentiation(self, exp))),
+        )
     }
 
     pub fn set_grad(&self, grad: f64) {
@@ -108,13 +123,15 @@ impl Value {
                 lhs.toposort_impl(visited, traversal);
                 rhs.toposort_impl(visited, traversal);
             }
+            Some(Operation::Exponentiation(base, _)) => {
+                base.toposort_impl(visited, traversal);
+            }
             None => {}
         }
 
         traversal.push(self);
     }
 }
-
 
 impl PartialEq for Value {
     fn eq(&self, other: &Value) -> bool {
@@ -136,7 +153,7 @@ impl std::ops::Add for Value {
     fn add(self, other: Value) -> Value {
         Value::new(
             self.data() + other.data(),
-            Some(Rc::new(Operation::Addition(self, other)))
+            Some(Rc::new(Operation::Addition(self, other))),
         )
     }
 }
@@ -147,7 +164,7 @@ impl Sub for Value {
     fn sub(self, other: Value) -> Value {
         Value::new(
             self.data() - other.data(),
-            Some(Rc::new(Operation::Subtraction(self, other)))
+            Some(Rc::new(Operation::Subtraction(self, other))),
         )
     }
 }
@@ -158,7 +175,7 @@ impl Mul for Value {
     fn mul(self, other: Value) -> Value {
         Value::new(
             self.data() * other.data(),
-            Some(Rc::new(Operation::Multiplication(self, other)))
+            Some(Rc::new(Operation::Multiplication(self, other))),
         )
     }
 }
@@ -214,5 +231,31 @@ mod test {
         assert_eq!(a.grad(), 12.0);
         assert_eq!(b.grad(), 11.0);
         assert_eq!(c.grad(), 1.0);
+    }
+
+    #[test]
+    fn test_powi_positive_exp() {
+        let x = Value::from_val(3.0);
+        // y = 4 * x^5
+        let y = Value::from_val(4.0) * x.clone().powi(5);
+        y.backward();
+
+        assert_eq!(y.data(), 972.0);
+        assert_eq!(y.grad(), 1.0);
+        // dy/dx = 20x^4
+        assert_eq!(x.grad(), 4.0 * 5.0 * x.data().powi(4));
+    }
+
+    #[test]
+    fn test_powi_zero_exp() {
+        let x = Value::from_val(3.0);
+        // y = x^0
+        let y = x.clone().powi(0);
+        y.backward();
+
+        assert_eq!(y.data(), 1.0);
+        assert_eq!(y.grad(), 1.0);
+        // dy/dx = 20x^4
+        assert_eq!(x.grad(), 0.0);
     }
 }
